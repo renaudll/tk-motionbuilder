@@ -291,6 +291,11 @@ Please report any issues to:
         self._initialize_dark_look_and_feel()
         self._initialize_menu()
 
+        app = pyfbsdk.FBApplication()
+        app.OnFileOpenCompleted.Add(self._on_scene_event_callback)
+        app.OnFileNewCompleted.Add(self._on_scene_event_callback)
+        app.OnFileSaveCompleted.Add(self._on_scene_event_callback)
+
     def post_context_change(self, old_context, new_context):
         """
         Handles post-context-change requirements.
@@ -302,11 +307,50 @@ Please report any issues to:
         self._menu_generator.destroy_menu()
         self._initialize_menu()
 
+    def _on_scene_event_callback(self, control, event):
+        """
+        Callback that's run whenever a scene is opened, saved, or a new scene is created.
+        """
+        try:
+            self._refresh_engine()
+        except Exception as e:
+            self.logger.exception(
+                "Message: PTR encountered a problem changing the Engine's context.\n"
+                "Please contact %s\n\n"
+                "Exception: %s\n" % (sgtk.support_url, e)
+            )
+
+    def _refresh_engine(self):
+        """
+        Refresh the current engine by resolving the toolkit context from the
+        current scene path and triggering a context change if needed.
+        """
+        path = pyfbsdk.FBApplication().FBXFileName
+        if not path:
+            # This is a File->New call, so we just leave the engine in the current context and move on.
+            self.logger.debug("New file call, aborting the refresh of the engine.")
+            return
+
+        # This file could be in another project altogether, so create a new API instance.
+        tk = sgtk.sgtk_from_path(path)
+        self.logger.debug("Extracted sgtk instance: '%r' from path: '%r'", tk, path)
+
+        ctx = tk.context_from_path(path, self.context)
+        self.logger.debug("Given the path: '%s' the following context was extracted: '%r'", path, ctx)
+
+        if ctx != self.context:
+            self.logger.debug("Changing the context to '%r'", ctx)
+            self.change_context(ctx)
+
     def destroy_engine(self):
         """
         Uninitialize engine state
         """
         self.logger.debug("%s: Destroying..." % self)
+        app = pyfbsdk.FBApplication()
+        app.OnFileOpenCompleted.Remove(self._on_scene_event_callback)
+        app.OnFileNewCompleted.Remove(self._on_scene_event_callback)
+        app.OnFileSaveCompleted.Remove(self._on_scene_event_callback)
         self._menu_generator.destroy_menu()
 
     def _initialize_dark_look_and_feel(self):
